@@ -9,6 +9,8 @@ extern "C" {
 
 #ifdef HAVE_CUDA
 
+#include <cuda_bf16.h>
+
 #define GGML_CUDA_DMMV_X 32
 #define GGML_CUDA_MMV_Y 1
 #define WARP_SIZE 32
@@ -128,6 +130,177 @@ static __global__ void dequantize_mul_mat_vec_add_bias(const half* __restrict__ 
 	}
 }
 
+#define CCV_NNC_8I_GEMM_THREADS (256)
+
+static __device__ __forceinline__ float _ccv_nnc_8i_to_float(const __half v) { return __half2float(v); }
+static __device__ __forceinline__ float _ccv_nnc_8i_to_float(const __nv_bfloat16 v) { return __bfloat162float(v); }
+static __device__ __forceinline__ void _ccv_nnc_8i_from_float(const float v, __half* const out) { *out = __float2half_rn(v); }
+static __device__ __forceinline__ void _ccv_nnc_8i_from_float(const float v, __nv_bfloat16* const out) { *out = __float2bfloat16(v); }
+
+static inline size_t _ccv_nnc_8i_rowwise_scale_offset(const size_t count)
+{
+	return (count + 127) & ~(size_t)127;
+}
+
+template<typename NUM>
+__global__ void _ccv_nnc_8i_rowwise_quantize(const int rows, const int cols, const NUM* const a, int8_t* const qa, float* const scales)
+{
+	__shared__ float warp_max[CCV_NNC_8I_GEMM_THREADS / 32];
+	const int row = blockIdx.x;
+	if (row >= rows)
+		return;
+	const size_t offset = (size_t)row * cols;
+	const NUM* const ap = a + offset;
+	int8_t* const qp = qa + offset;
+	int i;
+	float amax = 0;
+	for (i = threadIdx.x; i < cols; i += CCV_NNC_8I_GEMM_THREADS)
+		amax = fmaxf(amax, fabsf(_ccv_nnc_8i_to_float(ap[i])));
+#pragma unroll
+	for (int mask = 16; mask > 0; mask >>= 1)
+		amax = fmaxf(amax, __shfl_xor_sync(0xffffffff, amax, mask, 32));
+	const int lane = threadIdx.x & 31;
+	const int warp = threadIdx.x >> 5;
+	if (lane == 0)
+		warp_max[warp] = amax;
+	__syncthreads();
+	if (warp == 0)
+	{
+		amax = (lane < (CCV_NNC_8I_GEMM_THREADS / 32)) ? warp_max[lane] : 0;
+#pragma unroll
+		for (int mask = (CCV_NNC_8I_GEMM_THREADS / 64); mask > 0; mask >>= 1)
+			amax = fmaxf(amax, __shfl_xor_sync(0xffffffff, amax, mask, 32));
+		if (lane == 0)
+		{
+			warp_max[0] = amax;
+			scales[row] = amax * (1.0f / 127.0f);
+		}
+	}
+	__syncthreads();
+	amax = warp_max[0];
+	const float inv = amax > 0 ? 127.0f / amax : 0.0f;
+	for (i = threadIdx.x; i < cols; i += CCV_NNC_8I_GEMM_THREADS)
+		qp[i] = (int8_t)__float2int_rn(fminf(fmaxf(_ccv_nnc_8i_to_float(ap[i]) * inv, -127.0f), 127.0f));
+}
+
+template<typename NUM>
+__global__ void _ccv_nnc_8i_rowwise_dequantize(const size_t count, const int cols, const int32_t* const acc, const float* const a_scales, const NUM* const w_scales, const NUM* const bias, NUM* const b)
+{
+	CUDA_1D_KERNEL_LOOP(i, count) {
+		const int col = i % cols;
+		const size_t row = i / cols;
+		float v = (float)acc[i] * a_scales[row] * _ccv_nnc_8i_to_float(w_scales[col]);
+		if (bias)
+			v += _ccv_nnc_8i_to_float(bias[col]);
+		_ccv_nnc_8i_from_float(v, b + i);
+	}
+}
+
+static int _ccv_nnc_8i_rowwise_gemm_declined = 0;
+static int _ccv_nnc_8i_rowwise_gemm_announced = 0;
+
+template<typename NUM>
+static int _ccv_nnc_8i_rowwise_gemm(cublasHandle_t cublas, cudaStream_t stream, const int batch_size, const int m, const int n, const int k, const NUM* const a, const int8_t* const qw, const NUM* const w_scales, const NUM* const bias, NUM* const b, int8_t* const qa, float* const a_scales, int32_t* const acc)
+{
+	static const int32_t one_i32 = 1;
+	static const int32_t zero_i32 = 0;
+	const size_t rows = (size_t)batch_size * m;
+	_ccv_nnc_8i_rowwise_quantize<NUM><<<(unsigned int)rows, CCV_NNC_8I_GEMM_THREADS, 0, stream>>>((int)rows, k, a, qa, a_scales);
+	const cublasStatus_t status = cublasGemmStridedBatchedEx(cublas, CUBLAS_OP_T, CUBLAS_OP_N, n, m, k,
+		&one_i32,
+		qw, CUDA_R_8I, k, 0,
+		qa, CUDA_R_8I, k, (long long int)m * k,
+		&zero_i32,
+		acc, CUDA_R_32I, n, (long long int)m * n,
+		batch_size, CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+	if (status != CUBLAS_STATUS_SUCCESS)
+	{
+		_ccv_nnc_8i_rowwise_gemm_declined = 1;
+		printf("[%s:%d]:CUBLAS - int8 GEMM declined (error %d) at %dx%dx%d; i8x falls back to fp16 for the rest of this process.\n", __FILE__, __LINE__, (int)status, m, n, k);
+		return 0;
+	}
+	if (!_ccv_nnc_8i_rowwise_gemm_announced)
+	{
+		_ccv_nnc_8i_rowwise_gemm_announced = 1;
+		printf("[ccv] i8x: native int8 GEMM engaged (first op %dx%dx%d). Set CCV_NNC_CUDA_INT8_GEMM=0 to use the fp16 path instead.\n", m, n, k);
+	}
+	const size_t count = rows * n;
+	_ccv_nnc_8i_rowwise_dequantize<NUM><<<CUDA_GET_BLOCKS(count), CUDA_NUM_THREADS, 0, stream>>>(count, n, acc, a_scales, w_scales, bias, b);
+	return 1;
+}
+
+static int _ccv_nnc_gemm_forw_8i_rowwise(const ccv_nnc_cmd_t cmd, ccv_nnc_tensor_t* const* const inputs, const int input_size, ccv_nnc_tensor_t* const* const outputs, const int output_size, ccv_nnc_stream_context_t* const stream_context)
+{
+	if (_ccv_nnc_8i_rowwise_gemm_declined || !ccv_nnc_cuda_int8_gemm_enabled())
+		return 0;
+	const ccv_nnc_tensor_view_t* const a = (const ccv_nnc_tensor_view_t*)inputs[0];
+	const ccv_nnc_tensor_view_t* const w = (const ccv_nnc_tensor_view_t*)inputs[1];
+	const ccv_nnc_tensor_view_t* const bias = input_size > 2 ? (const ccv_nnc_tensor_view_t*)inputs[2] : 0;
+	ccv_nnc_tensor_view_t* const b = (ccv_nnc_tensor_view_t*)outputs[0];
+	if (CCV_GET_DATA_TYPE(w->info.datatype) != CCV_QX || (w->info.datatype & 0xf00) != CCV_NNC_QX_8I_ROWWISE)
+		return 0;
+	const int datatype = (w->info.datatype & 0xff) << 12;
+	if (datatype != CCV_16F && datatype != CCV_16BF)
+		return 0;
+	if (a->info.datatype != datatype || b->info.datatype != datatype)
+		return 0;
+	if (bias && bias->info.datatype != datatype)
+		return 0;
+	if (!CCV_IS_TENSOR_CONTIGUOUS(a) || !CCV_IS_TENSOR_CONTIGUOUS(w) || !CCV_IS_TENSOR_CONTIGUOUS(b))
+		return 0;
+	if (bias && !CCV_IS_TENSOR_CONTIGUOUS(bias))
+		return 0;
+	if (ccv_nnc_tensor_nd(w->info.dim) != 2 || ccv_nnc_tensor_nd(a->info.dim) > 3 || ccv_nnc_tensor_nd(b->info.dim) > 3)
+		return 0;
+	if (ccv_nnc_is_matrix_transpose(a->info, cmd.info.blas.transpose_a) || !ccv_nnc_is_matrix_transpose(w->info, cmd.info.blas.transpose_b))
+		return 0;
+	int a_batch_size, a_rows, a_cols, a_batch_inc, a_rows_inc, a_cols_inc;
+	int w_batch_size, w_rows, w_cols, w_batch_inc, w_rows_inc, w_cols_inc;
+	int b_batch_size, b_rows, b_cols, b_batch_inc, b_rows_inc, b_cols_inc;
+	const static int no_transpose[2] = {};
+	ccv_nnc_tensor_get_matrix_params(a->info, 0, a->info.dim, cmd.info.blas.transpose_a, &a_batch_size, &a_rows, &a_cols, &a_batch_inc, &a_rows_inc, &a_cols_inc);
+	ccv_nnc_tensor_get_matrix_params(w->info, 0, w->info.dim, cmd.info.blas.transpose_b, &w_batch_size, &w_rows, &w_cols, &w_batch_inc, &w_rows_inc, &w_cols_inc);
+	ccv_nnc_tensor_get_matrix_params(b->info, 0, b->info.dim, no_transpose, &b_batch_size, &b_rows, &b_cols, &b_batch_inc, &b_rows_inc, &b_cols_inc);
+	if (w_batch_size != 1 || a_batch_size != b_batch_size)
+		return 0;
+	const int m = b_rows;
+	const int n = b_cols;
+	const int k = a_cols;
+	if (a_rows != m || w_rows != k || w_cols != n)
+		return 0;
+	if ((k & 3) || (n & 3))
+		return 0;
+	if (k <= 0 || k > 65536 || m <= 0 || n <= 0 || b_batch_size <= 0)
+		return 0;
+	if (bias && (ccv_nnc_tensor_nd(bias->info.dim) != 1 || bias->info.dim[0] != n))
+		return 0;
+	if (w->info.dim[0] != n || w->info.dim[1] != k)
+		return 0;
+	const size_t rows = (size_t)b_batch_size * m;
+	const size_t qa_size = (rows * k + 127) & ~(size_t)127;
+	const size_t sa_size = (rows * sizeof(float) + 127) & ~(size_t)127;
+	const size_t acc_size = rows * n * sizeof(int32_t);
+	if (acc_size > (size_t)1024 * 1024 * 1024)
+		return 0;
+	const size_t cublas_size = ccv_nnc_cublas_workspace_size_in_bytes(inputs, input_size, outputs, output_size);
+	unsigned char* const workspace = (unsigned char*)ccv_nnc_stream_context_get_workspace(stream_context, cublas_size + qa_size + sa_size + acc_size, CCV_TENSOR_GPU_MEMORY);
+	int8_t* const qa = (int8_t*)(workspace + cublas_size);
+	float* const a_scales = (float*)(workspace + cublas_size + qa_size);
+	int32_t* const acc = (int32_t*)(workspace + cublas_size + qa_size + sa_size);
+	const int8_t* const qw = (const int8_t*)w->data.u8;
+	const unsigned char* const w_scales = w->data.u8 + _ccv_nnc_8i_rowwise_scale_offset((size_t)n * k);
+	ccv_nnc_tensor_prefetch_async((ccv_nnc_tensor_t*)a, stream_context);
+	ccv_nnc_tensor_prefetch_async((ccv_nnc_tensor_t*)w, stream_context);
+	if (bias)
+		ccv_nnc_tensor_prefetch_async((ccv_nnc_tensor_t*)bias, stream_context);
+	cublasHandle_t cublas = ccv_nnc_stream_context_get_cublas(stream_context);
+	ccv_nnc_stream_context_set_cublas_workspace(cublas, stream_context, cublas_size);
+	cudaStream_t stream = ccv_nnc_stream_context_get_stream(stream_context);
+	if (datatype == CCV_16F)
+		return _ccv_nnc_8i_rowwise_gemm<__half>(cublas, stream, b_batch_size, m, n, k, (const __half*)a->data.u8, qw, (const __half*)w_scales, bias ? (const __half*)bias->data.u8 : 0, (__half*)b->data.u8, qa, a_scales, acc);
+	return _ccv_nnc_8i_rowwise_gemm<__nv_bfloat16>(cublas, stream, b_batch_size, m, n, k, (const __nv_bfloat16*)a->data.u8, qw, (const __nv_bfloat16*)w_scales, bias ? (const __nv_bfloat16*)bias->data.u8 : 0, (__nv_bfloat16*)b->data.u8, qa, a_scales, acc);
+}
+
 static inline void _ccv_nnc_gbmm_and_bias(cublasHandle_t cublas, const void* const ones, const unsigned char* const a, const int a_datatype, const int a_nd, const int* const adim, const int* const astride, const unsigned char* const w, const int w_datatype, const int w_nd, const int* const wdim, const int* const wstride, unsigned char* const bias, const int bias_datatype, const int bias_nd, const int* const biasdim, const int* const biasstride, unsigned char* const b, const int b_datatype, const int b_nd, const int* const bdim, const int* const bstride, const int b_batch_size, const cublasOperation_t transa, const cublasOperation_t transb, const int lda_inc, const int ldb_inc, const int a_batch_inc, const int w_batch_inc, const int bias_batch_inc, const int b_batch_inc, const int b_rows, const int b_cols, const int a_cols, const int bias_rows_inc, const int b_rows_inc, const int reduced_precision)
 {
 	static const half one_f16 = 1;
@@ -238,6 +411,8 @@ static int _ccv_nnc_gemm_forw(const ccv_nnc_cmd_t cmd, const ccv_nnc_hint_t hint
 	assert(output_size == 1);
 	ccv_nnc_tensor_view_t* b = (ccv_nnc_tensor_view_t*)outputs[0];
 	assert(!bias || (bias->info.dim[1] == 0 || bias->info.dim[2] == 0 || bias->info.dim[3] == 0)); // It is a 1-d array
+	if (_ccv_nnc_gemm_forw_8i_rowwise(cmd, inputs, input_size, outputs, output_size, stream_context))
+		return CCV_NNC_EXEC_SUCCESS;
 	int a_batch_size, a_rows, a_cols, a_batch_inc, a_rows_inc, a_cols_inc;
 	int w_batch_size, w_rows, w_cols, w_batch_inc, w_rows_inc, w_cols_inc;
 	int b_batch_size, b_rows, b_cols, b_batch_inc, b_rows_inc, b_cols_inc;
