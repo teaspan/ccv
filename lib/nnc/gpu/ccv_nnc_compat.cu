@@ -534,6 +534,19 @@ extern "C" int ccv_cuda_is_sm8x(void)
 	return props.major == 8 && props.minor > 0;
 }
 
+int ccv_nnc_cuda_int8_gemm_enabled(void)
+{
+	static int preference = -2;
+	if (preference == -2)
+	{
+		const char* const env = getenv("CCV_NNC_CUDA_INT8_GEMM");
+		preference = env ? (env[0] != '0') : -1;
+	}
+	if (preference >= 0)
+		return preference;
+	return ccv_nnc_gpu_device_props().major >= 8;
+}
+
 ccv_nnc_stream_context_t* ccv_nnc_init_stream_context(ccv_nnc_stream_context_t* const stream_context)
 {
 	assert(CCV_STREAM_GET_CONTEXT(((int*)stream_context)[0]) == CCV_STREAM_CONTEXT_GPU);
