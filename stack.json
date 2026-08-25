@@ -1,17 +1,21 @@
 {
   "version": 5,
-  "prev": "a4d9094c8cd32ee0deb8a14b7f6317968d81beca",
-  "head": "5e2879409e8e09f19e0da5414bd46decacd93bb6",
+  "prev": "f6075f3378b57a9de6223712bae6d2dc543de65b",
+  "head": "c35a70c97a43118cbe4761e4f173ad0f9b91f786",
   "applied": [
     "shared",
     "int8-rowwise-gemm",
-    "rules-cuda-patches"
+    "rules-cuda-patches",
+    "refresh-temp"
   ],
   "unapplied": [],
   "hidden": [],
   "patches": {
     "int8-rowwise-gemm": {
       "oid": "82ed5619dbc9977b6c7a17907441b19d10a8907b"
+    },
+    "refresh-temp": {
+      "oid": "c35a70c97a43118cbe4761e4f173ad0f9b91f786"
     },
     "rules-cuda-patches": {
       "oid": "5e2879409e8e09f19e0da5414bd46decacd93bb6"
