@@ -11,6 +11,7 @@ cc_library(
 
 cc_library(
 	name = "dSFMT",
+	alwayslink = True,
 	srcs = [
 		"3rdparty/dsfmt/dSFMT.c"
 	],
@@ -25,6 +26,7 @@ cc_library(
 
 cc_library(
 	name = "kissfft",
+	alwayslink = True,
 	srcs = glob(["3rdparty/kissfft/*.c"]),
 	hdrs = glob(["3rdparty/kissfft/*.h"]),
 	copts = ccv_default_copts()
@@ -43,6 +45,7 @@ cc_library(
 
 cc_library(
 	name = "siphash",
+	alwayslink = True,
 	srcs = [
 		"3rdparty/siphash/siphash24.c"
 	],
@@ -64,6 +67,7 @@ cc_library(
 
 cc_library(
 	name = "SFMT",
+	alwayslink = True,
 	srcs = [
 		"3rdparty/sfmt/SFMT.c"
 	],
@@ -112,6 +116,7 @@ cc_library(
 
 cc_library(
 	name = "ccv_cache",
+	alwayslink = True,
 	srcs = [
 		"ccv_cache.c"
 	],
@@ -124,6 +129,7 @@ cc_library(
 
 cc_library(
 	name = "ccv_memory",
+	alwayslink = True,
 	srcs = [
 		"ccv_memory.c"
 	],
@@ -136,6 +142,7 @@ cc_library(
 
 cc_library(
 	name = "ccv_algebra",
+	alwayslink = True,
 	srcs = [
 		"ccv_algebra.c"
 	],
@@ -148,6 +155,7 @@ cc_library(
 
 cc_library(
 	name = "ccv_util",
+	alwayslink = True,
 	srcs = [
 		"ccv_util.c"
 	],
@@ -160,6 +168,7 @@ cc_library(
 
 cc_library(
 	name = "ccv_output",
+	alwayslink = True,
 	srcs = [
 		"ccv_output.c"
 	],
@@ -171,6 +180,7 @@ cc_library(
 
 cc_library(
 	name = "ccv_io",
+	alwayslink = True,
 	srcs = [
 		"ccv_io.c",
 		"io/_ccv_io_binary.inc",
@@ -188,6 +198,7 @@ cc_library(
 
 cc_library(
 	name = "ccv_image_processing",
+	alwayslink = True,
 	srcs = [
 		"ccv_image_processing.c"
 	],
@@ -200,6 +211,7 @@ cc_library(
 
 cc_library(
 	name = "ccv_basic",
+	alwayslink = True,
 	srcs = [
 		"ccv_basic.c"
 	],
@@ -212,6 +224,7 @@ cc_library(
 
 cc_library(
 	name = "ccv_resample",
+	alwayslink = True,
 	srcs = [
 		"ccv_resample.c"
 	],
@@ -224,6 +237,7 @@ cc_library(
 
 cc_library(
 	name = "ccv_wavelet",
+	alwayslink = True,
 	srcs = [
 		"ccv_wavelet.c"
 	],
@@ -236,6 +250,7 @@ cc_library(
 
 cc_library(
 	name = "ccv_numeric",
+	alwayslink = True,
 	srcs = [
 		"ccv_numeric.c"
 	],
@@ -256,6 +271,7 @@ config_setting(
 
 cc_library(
 	name = "ccv_cwc",
+	alwayslink = True,
 	srcs = [
 		"cuda/cwc_convnet_ext.c"
 	],
@@ -490,6 +506,7 @@ objc_library(
 
 cc_library(
 	name = "cmd",
+	alwayslink = True,
 	srcs = glob(["nnc/cmd/**/*.h"]) + glob(["nnc/cmd/**/*.c"]) + [
 		"nnc/cmd/ccv_nnc_cmd.inc"
 	],
@@ -600,6 +617,21 @@ cc_library(
 		],
 		"//conditions:default": []
 	}) + select({
+		":linux_build": ["@sqlite3//:SQLite3"],
+		"//conditions:default": []
+	})
+)
+
+cc_library(
+	name = "nnc_dynamic_headers",
+	visibility = ["//visibility:public"],
+	deps = [
+		":SFMT_hdrs",
+		":ccv_headers",
+		":khash",
+		":nnc_headers",
+		":sqlite3_hdrs",
+	] + select({
 		":linux_build": ["@sqlite3//:SQLite3"],
 		"//conditions:default": []
 	})
