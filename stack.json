@@ -1,11 +1,11 @@
 {
   "version": 5,
-  "prev": "8e4542bd81fe5eb07db43059dccb4418d6f41b92",
+  "prev": "1edf14f010e2bf062c62dfe5613f679fb35af545",
   "head": "52f4526b67837b943fc6868e4c303749493af98d",
   "applied": [
     "shared",
     "int8-rowwise-gemm",
-    "rules-cuda-patches"
+    "rules-cuda-fork"
   ],
   "unapplied": [],
   "hidden": [],
@@ -13,7 +13,7 @@
     "int8-rowwise-gemm": {
       "oid": "82ed5619dbc9977b6c7a17907441b19d10a8907b"
     },
-    "rules-cuda-patches": {
+    "rules-cuda-fork": {
       "oid": "52f4526b67837b943fc6868e4c303749493af98d"
     },
     "shared": {
