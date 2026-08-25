@@ -1,0 +1,10 @@
+Bottom: 7ec7ede17dbad12e3324314806f4eba2c508ea1c
+Top:    f25de7a2906c06ff8a2a305f2acae69af8f61302
+Author: Teaspan <314463419+teaspan@users.noreply.github.com>
+Date:   2026-08-25 14:01:19 +0000
+
+Give @build_bazel_rules_cuda a patches list
+
+ccv_deps() is what declares the repository, so this is the only place a
+consumer can attach patches to it without pre-declaring it and copying the pin
+in as a second, silently drifting knob.

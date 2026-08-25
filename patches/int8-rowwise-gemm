@@ -1,0 +1,15 @@
+Bottom: 3b80543868e8a7fbe5bc0627dc1631650441e6c7
+Top:    7ec7ede17dbad12e3324314806f4eba2c508ea1c
+Author: Teaspan <314463419+teaspan@users.noreply.github.com>
+Date:   2026-08-25 14:01:19 +0000
+
+Add a native int8 rowwise GEMM for i8x weights on CUDA
+
+i8x weights decode to fp16 and run through the ordinary GEMM on CUDA, where
+Apple silicon has a native int8 path. This adds one over cuBLASLt. It is a
+numerics change and not only a speed change, because the activations are
+quantized to int8 as well, so an i8x model renders the same image rather than
+the same bytes. It declines three ways, on a shape and dtype gate, on a latch
+after any cuBLAS refusal, and on CCV_NNC_CUDA_INT8_GEMM=0, so a pod that is
+not Ampere or newer is unaffected. It logs one line when it engages, because a
+silently declining gate looks exactly like a working one.

@@ -1,0 +1,20 @@
+Bottom: 5247db64444999304ef11b314f6e3ac2f1d59ebd
+Top:    3b80543868e8a7fbe5bc0627dc1631650441e6c7
+Author: Teaspan <314463419+teaspan@users.noreply.github.com>
+Date:   2026-08-25 14:01:19 +0000
+
+Retain the host-code sub-libraries in a shared build
+
+cc_shared_library whole-archives only its direct deps, so the seventeen host
+sub-libraries whose symbols only app-side Swift references would be dropped by
+lazy archive linking. alwayslink keeps them. The four cuda_library targets are
+deliberately left lazy, because their members ride the registrant references in
+the committed ccv_nnc_cmd.inc and forcing them would embed hundreds of
+megabytes of kernels the binaries never carried. nnc_headers stays lazy for the
+same kind of reason, so its co.c does not force a second coroutine-TLS copy
+into every consumer.
+
+nnc_dynamic_headers exports the same header, define and include surface the
+static ccv and nnc targets hand their consumers, including the bare sqlite3.h
+include path from @sqlite3 on Linux. It is the interface of s4nnc's
+ccv_nnc_dynamic and nothing more.
