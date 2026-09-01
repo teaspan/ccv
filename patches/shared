@@ -1,20 +1,21 @@
 Bottom: c8688a132844c056c18faab14352e87f254a34df
 Top:    93c9b96ff91c2f35eb4d599435813d49f44dcaa7
 Author: Teaspan <314463419+teaspan@users.noreply.github.com>
-Date:   2026-09-01 04:10:10 +0000
+Date:   2026-09-01 21:11:05 +0000
 
-Retain the host-code sub-libraries in a shared build
+Mark the host sub-libraries alwayslink for the shared build
 
-cc_shared_library whole-archives only its direct deps, so the seventeen host
-sub-libraries whose symbols only app-side Swift references would be dropped by
-lazy archive linking. alwayslink keeps them. The four cuda_library targets are
-deliberately left lazy, because their members ride the registrant references in
-the committed ccv_nnc_cmd.inc and forcing them would embed hundreds of
-megabytes of kernels the binaries never carried. nnc_headers stays lazy for the
-same kind of reason, so its co.c does not force a second coroutine-TLS copy
-into every consumer.
+cc_shared_library only whole-archives its direct dependencies. The seventeen
+host sub-libraries are referenced only from Swift, so a lazy archive link
+drops them. alwayslink keeps them.
 
-nnc_dynamic_headers exports the same header, define and include surface the
-static ccv and nnc targets hand their consumers, including the bare sqlite3.h
-include path from @sqlite3 on Linux. It is the interface of s4nnc's
-ccv_nnc_dynamic and nothing more.
+The four cuda_library targets stay lazy. Their kernels are reached through
+the registrant references in ccv_nnc_cmd.inc, and forcing them would add
+hundreds of megabytes of kernels the binaries never contained. nnc_headers
+stays lazy too, so co.c does not put a second copy of the coroutine TLS into
+every consumer.
+
+nnc_dynamic_headers exports the headers, defines and include paths that the
+static ccv and nnc targets give their consumers, including the bare sqlite3.h
+include path from @sqlite3 on Linux. It is the interface for s4nnc's
+ccv_nnc_dynamic.
