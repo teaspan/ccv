@@ -5,4 +5,6 @@ Date:   2026-09-01 21:58:00 +0000
 
 Add a native int8 rowwise GEMM for i8x weights on CUDA
 
+Depending on the architecture, some GPUs benefit enormously,
+e.g. Ada/Hopper/Blackwell with the int8 units.
 Disable with CCV_NNC_CUDA_INT8_GEMM=0.
