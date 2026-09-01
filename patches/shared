@@ -1,12 +1,11 @@
 Bottom: c8688a132844c056c18faab14352e87f254a34df
 Top:    93c9b96ff91c2f35eb4d599435813d49f44dcaa7
 Author: Teaspan <314463419+teaspan@users.noreply.github.com>
-Date:   2026-09-01 21:32:00 +0000
+Date:   2026-09-01 21:58:00 +0000
 
-Mark the host sub-libraries alwayslink
+Mark the host sub-libraries as alwayslink
 
-cc_shared_library whole-archives only its direct deps. The cuda_library
+cc_shared_library only whole-archives its direct deps. The cuda_library
 targets stay lazy because ccv_nnc_cmd.inc already references every kernel,
 and nnc_headers stays lazy so co.c is not duplicated into every consumer.
-
 nnc_dynamic_headers is the interface for s4nnc's ccv_nnc_dynamic.
