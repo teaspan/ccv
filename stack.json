@@ -1,14 +1,18 @@
 {
   "version": 5,
-  "prev": "6ae36ce112fd9acde9f23e994c4b7df3fd080b15",
-  "head": "82ed5619dbc9977b6c7a17907441b19d10a8907b",
+  "prev": "a83090ef2fddd6f1a6e1fb91745cd4da70aa19bb",
+  "head": "d0b29fd99d173621c6bb6b7231ecbe106e698dd2",
   "applied": [
     "shared",
-    "int8-rowwise-gemm"
+    "int8-rowwise-gemm",
+    "dti-dev-sentinel"
   ],
   "unapplied": [],
   "hidden": [],
   "patches": {
+    "dti-dev-sentinel": {
+      "oid": "d0b29fd99d173621c6bb6b7231ecbe106e698dd2"
+    },
     "int8-rowwise-gemm": {
       "oid": "82ed5619dbc9977b6c7a17907441b19d10a8907b"
     },
