@@ -1,7 +1,7 @@
 {
   "version": 5,
-  "prev": "da1189d5c4b942cc9076f67e7b6a6ca525750041",
-  "head": "e277ac247ecd89f7ce850bb40cf74e165d193467",
+  "prev": "b7e3072258986e871dc36f2314f65e48c6079ef4",
+  "head": "f53347902239ef73514bc7a0add2110a3f4f73d2",
   "applied": [
     "shared",
     "int8-rowwise-gemm"
@@ -10,10 +10,10 @@
   "hidden": [],
   "patches": {
     "int8-rowwise-gemm": {
-      "oid": "e277ac247ecd89f7ce850bb40cf74e165d193467"
+      "oid": "f53347902239ef73514bc7a0add2110a3f4f73d2"
     },
     "shared": {
-      "oid": "3d841315aede962a69270218e2d7e2bf53a6d0f4"
+      "oid": "ef210b6ec8b1039bb665d1a636dcfd719631b183"
     }
   }
 }
