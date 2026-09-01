@@ -2011,3 +2011,5 @@ void ccv_contour_free(ccv_contour_t* contour)
 		ccv_array_free(contour->set);
 	ccfree(contour);
 }
+
+const char ccv_dti_dev_sentinel[] = "dti-dev-sentinel-ccv";
