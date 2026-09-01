@@ -5,12 +5,4 @@ Date:   2026-09-01 21:32:00 +0000
 
 Add a native int8 rowwise GEMM for i8x weights on CUDA
 
-On CUDA, i8x weights are decoded to fp16 and multiplied with the ordinary
-GEMM. Apple silicon has a native int8 path. This adds one over cuBLASLt.
-
-The activations are quantized to int8 as well, so the numerics change. An
-i8x model renders the same image, not the same bytes.
-
-The path is skipped for unsupported shapes and dtypes, is disabled for the
-rest of the process after cuBLAS refuses once, and is disabled by
-CCV_NNC_CUDA_INT8_GEMM=0. It logs one line the first time it runs.
+Disable with CCV_NNC_CUDA_INT8_GEMM=0.
