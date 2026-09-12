@@ -1,7 +1,7 @@
 Bottom: 9a94d139a4087267f8940dd9c0af79d1a373f917
 Top:    486435ce58e80fc4c6f7120d34e0df93fc1b9054
 Author: Teaspan <314463419+teaspan@users.noreply.github.com>
-Date:   2026-09-12 12:57:04 +1000
+Date:   2026-09-12 03:05:17 +0000
 
 Add a native int8 rowwise GEMM for i8x weights on CUDA
 
